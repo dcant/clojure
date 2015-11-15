@@ -6,4 +6,5 @@
   :dependencies [[org.clojure/clojure "1.7.0"]
   				 [cheshire "5.5.0"]
   				 [org.clojure/data.json "0.2.6"]]
-  :main json.main)
+  :main json.main
+  :jvm-opts ["-Xmx256M"])

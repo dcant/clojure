@@ -16,60 +16,64 @@
 	[json]
 	(parse-string json true))
 
+(defn mergeheads
+	[m1 m2]
+	(reduce
+		(fn [ans [k v]]
+			(assoc m1 k v))
+		m1
+		m2))
+
+(defn mergerows
+	[r1 r2]
+	(reduce
+		(fn [ans item]
+			(conj ans item))
+		r1
+		r2))
+
+(defn mergejson
+	[ans cont]
+	(reduce
+		(fn [res [k v]]
+			(if (nil? (k res))
+				(assoc res k v)
+				(assoc res
+					k (assoc (assoc {} :head (mergeheads (:head (k res)) (:head v)))
+						:rows (mergerows (:rows (k res)) (:rows v))))))
+		ans
+		cont))
+
+(defn trans
+	[k coll pid]
+	(reduce
+		(fn [ans item]
+			(let [cont (reduce (fn [js [c v]]
+									(if (coll? v)
+										(mergejson js (trans c v (:id item)))
+										(assoc js
+											k (assoc (assoc {}
+														:head (assoc (:head (k js)) c 0))
+												:rows (conj [] (assoc (first (:rows (k js))) c v))))))
+								(assoc {} k (assoc (assoc {} :head {}) :rows []))
+								item)]
+				(mergejson ans (if (nil? pid)
+									cont
+									(assoc {}
+											k (assoc (assoc {} :head (:head (k cont)))
+													:rows (conj [] (assoc (first (:rows (k cont))) :parentid pid))))))))
+		{}
+		coll))
+
 (defn transfer
-	"one argument for outer json and two for inner json"
-	([mapdata]
-		(let [res (transient {})]
-			(doseq [[ke cont] mapdata]
-				(let [rows (transient [])  resitem (transient {})]
-					(doseq [item cont]
-						(let [parent (:id item) heads (transient {}) ritem (transient {})]
-							(doseq [[k c] item]
-								(if (coll? c)
-									(let [child (transfer c parent)]
-										(if (k res)
-											(doseq [row (:rows child)]
-												(conj! (:rows (k res)) row))
-											(let [cmap (transient {}) crows (transient [])]
-												(assoc! cmap :head (:head child))
-												(doseq [row (:rows child)]
-													(conj! crows row))
-												(assoc! cmap :rows crows)
-												(assoc! res k cmap))))
-									(do
-										(assoc! heads k 0)
-										(assoc! ritem k c))))
-							(if (ke res)
-								(conj! (:rows (ke res)) (persistent! ritem))
-								(do 
-									(conj! rows (persistent! ritem))
-									(assoc! resitem :head (persistent! heads))
-									(assoc! resitem :rows rows)
-									(assoc! res ke resitem)))))))
-			(let [pres (persistent! res) p (transient {})]
-				(doseq [[k c] pres]
-					(let [pcont (transient {})]
-						(assoc! pcont :head (:head c))
-						(assoc! pcont :rows (persistent! (:rows c)))
-						(assoc! p k (persistent! pcont))))
-				(persistent! p))))
-	([mapdata parent]
-		(let [cmap (transient {}) heads (transient {}) rows (transient [])]
-			(doseq [cont mapdata]
-				(let [row (transient {})]
-					(do
-						(doseq [[k c] cont]
-							(do
-								(assoc! heads k 0)
-								(assoc! row k c)))
-						(assoc! row :parent parent)
-						(conj! rows (persistent! row)))))
-			(assoc! cmap :head (persistent! heads))
-			(assoc! cmap :rows (persistent! rows))
-			(persistent! cmap))))
+	[m]
+	(trans :attractions (:attractions m) nil))
 
 (defn -main
 	([]
+		(let [x (transfer (json2map (slurp "/home/zang/code/clojure/json/attractions-stage2-09")))]
+			(spit "/tmp/res.json" (generate-string x {:pretty true}))))
+	([infile]
 		(let [x (transfer (json2map (seq2json (jsonalike2seq "/tmp/foo"))))]
 			(spit "/tmp/bar" (generate-string x {:pretty true}))))
 	([infile outfile]
